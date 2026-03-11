@@ -17,7 +17,7 @@
     </div>
 
     <t-card :bordered="false" class="action-item" :header-style="{ padding: 0 }" :body-style="{ padding: 0 }">
-      <template v-if="showTitle" #title>
+      <template v-if="showTitle" #subtitle>
         {{ config.msg }}
       </template>
 
