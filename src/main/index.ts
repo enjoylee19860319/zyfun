@@ -10,7 +10,10 @@ import { appLocale } from '@main/services/AppLocale';
 import { configManager } from '@main/services/ConfigManager';
 import { dbService } from '@main/services/DbService';
 import { fastifyService } from '@main/services/FastifyService';
-import { terminate as filmCmsTerminate } from '@main/services/FastifyService/routes/v1/film/cms/utils/cache';
+import {
+  setup as filmCmsSetup,
+  terminate as filmCmsTerminate,
+} from '@main/services/FastifyService/routes/v1/film/cms/utils/cache';
 import { fileStorage } from '@main/services/FileStorage';
 import { menuService } from '@main/services/MenuService';
 import { pluginService } from '@main/services/PluginService';
@@ -324,6 +327,7 @@ const main = async () => {
     setupReady();
 
     runFunction(() => {
+      filmCmsSetup();
       pluginService.autoLaunch();
     });
   }

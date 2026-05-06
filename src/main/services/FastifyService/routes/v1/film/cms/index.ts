@@ -48,7 +48,7 @@ import type {
 import type { FastifyPluginAsync } from 'fastify';
 import JSON5 from 'json5';
 
-import { prepare } from './utils/cache';
+import { adapter } from './utils/cache';
 import { formatCategories, formatEpisode, formatInfoContent } from './utils/cms';
 
 const API_PREFIX = 'film/cms';
@@ -63,7 +63,7 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid, force = false } = req.query || {};
         try {
-          await prepare(uuid, force);
+          await adapter(uuid, force);
           return reply.code(200).send({ code: 0, msg: 'ok', data: { success: true } });
         } catch {
           return reply.code(200).send({ code: 0, msg: 'ok', data: { success: false } });
@@ -84,8 +84,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid } = req.query || {};
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.home();
+        const ins = await adapter(uuid);
+        const resp = await ins.home();
 
         const source = await dbService.site.get(uuid);
 
@@ -133,8 +133,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid } = req.query || {};
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.homeVod();
+        const ins = await adapter(uuid);
+        const resp = await ins.homeVod();
 
         const videos = (Array.isArray(resp?.list) ? resp.list : [])
           .filter((v) => v.vod_id && v.vod_id !== 'no_data')
@@ -172,8 +172,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
         if (!isPositiveFiniteNumber(page)) page = 1;
         const extend = isJsonStr(rawExtend) ? JSON5.parse(rawExtend) : {};
 
-        const adapter = await prepare(uuid);
-        const resp = tid === '' ? await adapter.homeVod() : await adapter.category({ tid, page, extend });
+        const ins = await adapter(uuid);
+        const resp = tid === '' ? await ins.homeVod() : await ins.category({ tid, page, extend });
 
         const videos = (Array.isArray(resp?.list) ? resp.list : [])
           .filter((v) => v.vod_id && v.vod_id !== 'no_data')
@@ -208,8 +208,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid, ids } = req.query || {};
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.detail({ ids });
+        const ins = await adapter(uuid);
+        const resp = await ins.detail({ ids });
 
         const videos = (Array.isArray(resp?.list) ? resp.list : [])
           .filter((v) => v.vod_id)
@@ -258,8 +258,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
         if (isString(page)) page = Number.parseInt(page);
         if (!isPositiveFiniteNumber(page)) page = 1;
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.search({ wd, page });
+        const ins = await adapter(uuid);
+        const resp = await ins.search({ wd, page });
 
         const videos = (Array.isArray(resp?.list) ? resp.list : [])
           .filter((v) => v.vod_id)
@@ -294,8 +294,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid, flag, play } = req.query || {};
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.play({ flag, play });
+        const ins = await adapter(uuid);
+        const resp = await ins.play({ flag, play });
 
         const res = {
           url: isString(resp?.url) && !isStrEmpty(resp.url) ? resp.url : '',
@@ -323,8 +323,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid, action, value, timeout } = req.query || {};
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.action({ action, value, timeout });
+        const ins = await adapter(uuid);
+        const resp = await ins.action({ action, value, timeout });
 
         const res = resp as ICmsAction;
 
@@ -345,8 +345,8 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid, ...args } = req.query || {};
 
-        const adapter = await prepare(uuid);
-        const resp = await adapter.proxy(args);
+        const ins = await adapter(uuid);
+        const resp = await ins.proxy(args);
 
         const res = resp as ICmsProxy;
 
@@ -367,14 +367,14 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
       try {
         const { uuid, type } = req.query || {};
         const retry = 3;
-        const adapter = await prepare(uuid);
+        const ins = await adapter(uuid);
 
         const checkSearch = async () => {
           await runRetryAsyncFunction(
             async () => {
               const keywords = ['我', '你', '他'];
               const wd = keywords[Math.floor(Math.random() * keywords.length)];
-              return await adapter.search({ wd });
+              return await ins.search({ wd });
             },
             retry,
             (result) => !isNil(result?.list) && !isArrayEmpty(result.list) && result.list[0]?.vod_id !== 'no_data',
@@ -384,13 +384,13 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
         };
 
         const checkMain = async () => {
-          const home = await adapter.home();
+          const home = await ins.home();
           if (isNil(home.class) || isArrayEmpty(home.class)) return false;
 
           let category = await runRetryAsyncFunction(
             async () => {
               const tid = home.class[Math.floor(Math.random() * home.class.length)]?.type_id;
-              return await adapter.category({ tid });
+              return await ins.category({ tid });
             },
             retry,
             (result) => !isNil(result?.list) && !isArrayEmpty(result.list) && result.list[0]?.vod_id !== 'no_data',
@@ -407,7 +407,7 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
           const detail = await runRetryAsyncFunction(
             async () => {
               const ids = category.list[Math.floor(Math.random() * category.list.length)]?.vod_id;
-              return await adapter.detail({ ids });
+              return await ins.detail({ ids });
             },
             retry,
             (result) =>
@@ -418,7 +418,7 @@ const api: FastifyPluginAsync = async (fastify): Promise<void> => {
           );
 
           const vod_episode = formatEpisode(detail.list[0].vod_play_from, detail.list[0].vod_play_url)!;
-          const resPlay = await adapter.play({
+          const resPlay = await ins.play({
             flag: Object.keys(vod_episode)[0] || '',
             play: vod_episode[Object.keys(vod_episode)[0]]?.[0].link || '',
           });
