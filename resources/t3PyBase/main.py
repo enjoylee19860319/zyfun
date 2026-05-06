@@ -4,14 +4,15 @@
 import argparse
 import asyncio
 import builtins
+from concurrent import futures
 from functools import lru_cache
+import grpc
 import importlib.util
 import inspect
 import json
 import signal
 import sys
 from typing import Any, Dict, List, Optional
-import zmq
 import traceback
 
 signal.signal(signal.SIGINT, lambda signum, frame: sys.exit(130))
@@ -24,9 +25,9 @@ def custom_print(*args: Any, **kwargs: Any) -> None:
             "type": "multiple" if len(args) > 0 else "single",
             "msg": [*args, *[f'{k}={v}' for k, v in kwargs.items()]]
         }
-        builtins.original_print(log)  # type: ignore[attr-defined]
-        log_socket.send_string(json.dumps(log, ensure_ascii=False))
-    except zmq.ZMQError:
+        builtins.original_print(json.dumps(log, ensure_ascii=False))  # type: ignore[attr-defined]
+        sys.stdout.flush()
+    except Exception:
         pass
 
 
@@ -40,9 +41,8 @@ def ensure_json_str(val: Any) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Spider ZMQ server")
-    parser.add_argument("--ctrl-port", type=int, default=19979, help="Control port")
-    parser.add_argument("--log-port", type=int, help="Log port (default=ctrl_port+1)")
+    parser = argparse.ArgumentParser(description="Spider gRPC server")
+    parser.add_argument("--port", type=int, default=19979, help="Port")
     return parser.parse_args()
 
 
@@ -81,7 +81,7 @@ def core(method: str, source_code: str, opts: List[Any]) -> Any:
     # print(f"Received request: method={method}, options={opts}")
 
     if not source_code:
-        raise RuntimeError(f"Source content is empty")
+        raise RuntimeError("Source content is empty")
 
     uuid = hash(source_code)
     spider = get_spider(uuid, source_code)
@@ -97,50 +97,79 @@ def core(method: str, source_code: str, opts: List[Any]) -> Any:
         raise RuntimeError(f"Failed to execute method '{method}':\n{full_tb}") from exc_e
 
 
-if __name__ == '__main__':
-    cli_args = parse_args()
-    CTRL_PORT = cli_args.ctrl_port
-    LOG_PORT = cli_args.log_port or (CTRL_PORT + 1)
+def serialize_response(payload: Dict[str, Any]) -> bytes:
+    return json.dumps(payload, ensure_ascii=False).encode('utf-8')
+
+
+def deserialize_request(raw: bytes) -> Dict[str, Any]:
+    return json.loads(raw.decode('utf-8'))
+
+
+class SpiderService:
+    def Exec(self, request: Dict[str, Any], context: grpc.ServicerContext) -> Dict[str, Any]:
+        try:
+            code: str = request.get("code", "")
+            method_name: str = request.get("type", "")
+            options: List[Any] = request.get("options", [])
+
+            if method_name == "init":
+                if not options:
+                    options = ['']
+                options = [ensure_json_str(options[0])]
+
+            result: Any = core(method_name, code, options)
+            return {"result": result}
+        except Exception as e:
+            log_payload = {
+                "type": "single",
+                "msg": [f"{str(e) or 'Unknown error'}"]
+            }
+            builtins.original_print(json.dumps(log_payload, ensure_ascii=False))  # type: ignore[attr-defined]
+            sys.stdout.flush()
+            return {"error": f"{str(e) or 'Unknown error'}"}
+
+
+def serve(port: int) -> None:
+    service = SpiderService()
+
+    # Key is RPC method name, value defines handler + codec.
+    rpc_method_handlers = {
+        'Exec': grpc.unary_unary_rpc_method_handler(
+            service.Exec,
+            request_deserializer=deserialize_request,
+            response_serializer=serialize_response,
+        ),
+    }
+
+    # Register a generic handler without generated proto stubs.
+    generic_handler = grpc.method_handlers_generic_handler('t3py.SpiderService', rpc_method_handlers)
+
+    # Thread pool allows concurrent RPC calls.
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    server.add_generic_rpc_handlers((generic_handler,))
+    # Bind the control endpoint on the configured port.
+    server.add_insecure_port(f'[::]:{port}')
+    server.start()
+
+    sys.stdout.write(f"Spider grpc server started on [::]:{port}\n")
+    sys.stdout.flush()
 
     try:
-        context = zmq.Context()
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        server.stop(grace=0)
 
-        log_socket = context.socket(zmq.PUB)
-        log_socket.bind(f"tcp://*:{LOG_PORT}")
 
+if __name__ == '__main__':
+    cli_args = parse_args()
+    PORT = cli_args.port
+
+    try:
         builtins.print = custom_print
-
-        ctrl_socket = context.socket(zmq.REP)
-        ctrl_socket.bind(f"tcp://*:{CTRL_PORT}")
-
-        sys.stdout.write(f"Spider ZMQ server started. CTRL_PORT={CTRL_PORT}, LOG_PORT={LOG_PORT}\n")
-        sys.stdout.flush()
-
-        while True:
-            try:
-                message: str = ctrl_socket.recv_string()
-                request: Dict[str, Any] = json.loads(message)
-
-                code: str = request.get("code", "")
-                method_name: str = request.get("type", "")
-                options: List[Any] = request.get("options", [])
-
-                if method_name == "init":
-                    if not options:
-                        options = ['']
-                    options = [ensure_json_str(options[0])]
-
-                res: Any = core(method_name, code, options)
-                ctrl_socket.send_string(json.dumps(res, ensure_ascii=False))
-
-            except Exception as e:
-                log_socket.send_string(
-                    json.dumps({"type": "single", "msg": [f"Failed to execute, cause: {str(e) or 'Unknown error'}"]},
-                               ensure_ascii=False))
-                ctrl_socket.send_string(json.dumps({"error": f"{str(e) or 'Unknown error'}"}, ensure_ascii=False))
+        serve(PORT)
 
     except SystemExit:
-        sys.stdout.write("Spider ZMQ server exited")
+        sys.stdout.write("Spider gRPC server exited")
         sys.stdout.flush()
         sys.exit(130)
 

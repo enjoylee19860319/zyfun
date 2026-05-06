@@ -1,49 +1,77 @@
+import { Buffer } from 'node:buffer';
 import { join } from 'node:path';
 
+import * as grpc from '@grpc/grpc-js';
 import { loggerService } from '@logger';
 import { PythonService } from '@main/services/PythonService';
 import { APP_PUBLIC_PATH } from '@main/utils/path';
 import { request } from '@main/utils/request';
+import { getTimeout } from '@main/utils/tool';
 import { SITE_LOGGER_MAP, SITE_TYPE } from '@shared/config/film';
 import { isJson } from '@shared/modules/validate';
 import type { ICmsParams, ICmsResultPromise, IConstructorOptions } from '@shared/types/cms';
-import workerpool from 'workerpool';
-import * as zmq from 'zeromq';
 
 const logger = loggerService.withContext(SITE_LOGGER_MAP[SITE_TYPE.T3_PY]);
 
-zmq.context.blocky = false;
+const GRPC_SERVICE_NAME = 't3py.SpiderService';
 
-const loggerModule = async (port: number) => {
-  const workerpool = await import('workerpool');
-  const zmq = await import('zeromq');
+interface IGrpcRequest {
+  code: string;
+  type: string;
+  options: any[];
+}
 
-  zmq.context.blocky = false;
+interface IGrpcResponse {
+  result?: any;
+  error?: string;
+}
 
-  const sock = new zmq.Subscriber();
-  sock.linger = 0;
-  sock.connect(`tcp://127.0.0.1:${port}`);
-  sock.subscribe('');
+type ISpiderGrpcClient = grpc.Client & {
+  Exec: ((
+    request: IGrpcRequest,
+    options: grpc.CallOptions,
+    callback: (error: grpc.ServiceError | null, response: IGrpcResponse) => void,
+  ) => grpc.ClientUnaryCall) &
+    ((
+      request: IGrpcRequest,
+      callback: (error: grpc.ServiceError | null, response: IGrpcResponse) => void,
+    ) => grpc.ClientUnaryCall);
+};
 
-  for await (const [msgRaw] of sock) {
-    try {
-      const msg = JSON.parse(msgRaw.toString());
-      workerpool.workerEmit({ type: 'log', level: 'verbose', msg });
-    } catch {
-      workerpool.workerEmit({ type: 'log', level: 'error', msg: 'Failed to parse log message' });
-    }
-  }
+type ISpiderGrpcClientConstructor = new (
+  address: string,
+  credentials: grpc.ChannelCredentials,
+  options?: Partial<grpc.ClientOptions>,
+) => ISpiderGrpcClient;
+
+const createGrpcClientCtor = (): ISpiderGrpcClientConstructor => {
+  const serviceDefinition: grpc.ServiceDefinition = {
+    Exec: {
+      path: `/${GRPC_SERVICE_NAME}/Exec`,
+      requestStream: false,
+      responseStream: false,
+      requestSerialize: (value: IGrpcRequest): Buffer => Buffer.from(JSON.stringify(value), 'utf-8'),
+      requestDeserialize: (buffer: Buffer): IGrpcRequest => JSON.parse(buffer.toString('utf-8')),
+      responseSerialize: (value: IGrpcResponse): Buffer => Buffer.from(JSON.stringify(value), 'utf-8'),
+      responseDeserialize: (buffer: Buffer): IGrpcResponse => JSON.parse(buffer.toString('utf-8')),
+      originalName: 'Exec',
+    },
+  };
+
+  return grpc.makeGenericClientConstructor(
+    serviceDefinition,
+    GRPC_SERVICE_NAME,
+  ) as unknown as ISpiderGrpcClientConstructor;
 };
 
 class ConnectService extends PythonService {
   private static instance: ConnectService;
 
-  private pool: workerpool.Pool | null = null;
-  private socket: zmq.Request | null = null;
+  private client: ISpiderGrpcClient | null = null;
   private pids: number[] = [];
+  private stdoutBuffer: string = '';
 
-  private readonly ctrlPort: number = 19979;
-  private readonly logPort: number = this.ctrlPort + 1;
+  private readonly port: number = 19979;
 
   public static getInstance(): ConnectService {
     if (!ConnectService.instance) {
@@ -54,62 +82,117 @@ class ConnectService extends PythonService {
     return ConnectService.instance;
   }
 
-  private async connectLogger(): Promise<void> {
-    if (this.pool) return;
+  private createClient(): ISpiderGrpcClient {
+    const ClientCtor = createGrpcClientCtor();
+    return new ClientCtor(`0.0.0.0:${this.port}`, grpc.credentials.createInsecure());
+  }
+
+  private async connectRpc(): Promise<void> {
+    if (this.client) return;
 
     try {
-      const pool = workerpool.pool({
-        maxWorkers: 1,
-        workerType: 'process',
-        forkOpts: { silent: true },
-      });
+      const client = this.createClient();
+      const deadline = new Date(Date.now() + 5 * 1000);
 
-      await pool.exec(loggerModule, [this.logPort], {
-        on(payload) {
-          const { type, level, msg } = payload;
-
-          if (type === 'log') {
-            // const msgType = msg.type;
-            const msgList = msg?.msg ?? [];
-
-            const log = msgList.map((t: any) => (isJson(t) ? JSON.stringify(t) : t)).join(' ');
-
-            logger[level](log);
+      await new Promise<void>((resolve, reject) => {
+        client.waitForReady(deadline, (error?: Error | null) => {
+          if (error) {
+            reject(error);
+            return;
           }
-        },
+          resolve();
+        });
       });
 
-      this.pool = pool;
+      this.client = client;
     } catch (error) {
-      this.pool = null;
-      throw new Error(`Failed to connect to Python logger service: ${error}`);
+      this.client = null;
+      throw new Error(`Failed to connect to Python gRPC service: ${error}`);
     }
   }
 
-  private async connectApi(): Promise<void> {
-    if (this.socket) return;
+  private closeClient(): void {
+    if (this.client) {
+      this.client.close();
+      this.client = null;
+    }
+  }
+
+  private handlePythonLog(content: string): void {
+    let parsed: { type?: string; msg?: any[] } | null = null;
 
     try {
-      const ctrlSocket = new zmq.Request();
-      ctrlSocket.linger = 0;
-      ctrlSocket.connect(`tcp://127.0.0.1:${this.ctrlPort}`);
-      this.socket = ctrlSocket;
-    } catch (error) {
-      this.socket = null;
-      throw new Error(`Failed to connect to Python api service: ${error}`);
+      parsed = JSON.parse(content) as { type?: string; msg?: any[] };
+    } catch {
+      logger.debug(content);
+      return;
+    }
+
+    const msgList = parsed?.msg ?? [];
+    const log = msgList.map((t: any) => (isJson(t) ? JSON.stringify(t) : t)).join(' ');
+
+    logger.verbose(log || content);
+  }
+
+  private handlePythonStdout(chunk: string): void {
+    this.stdoutBuffer += chunk;
+
+    const lines = this.stdoutBuffer.split(/\r?\n/);
+    this.stdoutBuffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const content = line.trim();
+      if (!content) continue;
+      this.handlePythonLog(content);
+    }
+  }
+
+  private handlePythonStderr(chunk: string): void {
+    const lines = chunk.split(/\r?\n/).map((line) => line.trim());
+
+    for (const line of lines) {
+      if (!line) continue;
+      logger.warn(line);
     }
   }
 
   private async connect(): Promise<void> {
-    this.connectLogger();
-    await this.connectApi();
+    await this.connectRpc();
+  }
+
+  private async exec(payload: IGrpcRequest): Promise<any> {
+    if (!this.client) {
+      throw new Error('gRPC client is not initialized.');
+    }
+
+    return await new Promise<any>((resolve, reject) => {
+      const deadline = new Date(Date.now() + getTimeout());
+
+      this.client!.Exec(payload, { deadline }, (error, response) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        if (!response) {
+          reject(new Error('Empty response from Python gRPC service'));
+          return;
+        }
+
+        if (response.error) {
+          reject(new Error(response.error));
+          return;
+        }
+
+        resolve(response.result);
+      });
+    });
   }
 
   public async prepare(): Promise<void> {
-    this.checkBinary();
-    await this.installDep();
+    await this.setup();
 
-    const pids = await this.matchPort(this.ctrlPort);
+    const pids = await this.matchPort(this.port);
 
     if (pids.length) {
       this.pids = pids;
@@ -118,19 +201,47 @@ class ConnectService extends PythonService {
     }
 
     try {
-      await new Promise((resolve, reject) =>
-        this.runSpawn(['main.py', '--ctrl-port', String(this.ctrlPort)], true, {
-          stdoutCb: async () => {
-            const pids = await this.matchPort(this.ctrlPort);
-            if (pids.length) {
-              this.pids = pids;
-              await this.connect();
-              resolve('Python t3Py service started successfully');
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+
+        const done = (): void => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+
+        const fail = (error: Error): void => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        };
+
+        this.runSpawn(['main.py', '--port', String(this.port)], true, {
+          stdoutCb: async (data) => {
+            this.handlePythonStdout(data);
+
+            if (data.includes('Spider gRPC server started')) {
+              const runningPids = await this.matchPort(this.port);
+              if (runningPids.length) {
+                this.pids = runningPids;
+                done();
+              }
             }
-            reject(new Error('Process did not start as expected'));
           },
-        }),
-      );
+          stderrCb: (data) => {
+            this.handlePythonStderr(data);
+          },
+          errorCb: (error) => {
+            fail(error);
+          },
+          closeCb: (code) => {
+            if (settled) return;
+            fail(new Error(`Python t3Py process exited unexpectedly: ${code ?? 'unknown'}`));
+          },
+        });
+      });
+
+      await this.connect();
     } catch (error) {
       throw new Error(`Failed to start Python t3Py service: ${error}`);
     }
@@ -138,29 +249,29 @@ class ConnectService extends PythonService {
 
   public async terminate(): Promise<void> {
     try {
-      // ctrl socket
-      if (this.socket) this.socket.close();
-      this.socket = null;
+      this.closeClient();
 
-      // log socket
-      if (this.pool) await this.pool.terminate(true);
-      this.pool = null;
-
-      // process
       if (!this.pids.length) {
-        const pids = await this.matchPort(this.ctrlPort);
+        const pids = await this.matchPort(this.port);
         if (pids.length) this.pids = pids;
       }
 
       if (this.pids.length) await this.killProcess(this.pids);
       this.pids = [];
+      this.stdoutBuffer = '';
     } catch (error) {
       logger.error('Error during termination:', error as Error);
     }
   }
 
-  public getSocket(): zmq.Request | null {
-    return this.socket;
+  public async setup(): Promise<void> {
+    await this.checkBinary();
+    await this.installDep();
+  }
+
+  public async execCtx(code: string, type: string, options: any[] = []): Promise<any> {
+    const payload: IGrpcRequest = { code, type, options };
+    return await this.exec(payload);
   }
 }
 
@@ -187,19 +298,12 @@ export class T3PyAdapter {
     await connectService.terminate();
   }
 
+  public static async setup(): Promise<void> {
+    await connectService.setup();
+  }
+
   private async execCtx(type: string, options: any[] = []): Promise<any> {
-    const socket = connectService.getSocket();
-    if (!socket) {
-      throw new Error('Socket is not initialized.');
-    }
-
-    await socket.send(JSON.stringify({ code: this.code, type, options }));
-
-    const [reply] = await socket.receive();
-    const result = JSON.parse(reply.toString());
-
-    if (result?.error) throw new Error(result.error);
-
+    const result = await connectService.execCtx(this.code, type, options);
     return result;
   }
 
