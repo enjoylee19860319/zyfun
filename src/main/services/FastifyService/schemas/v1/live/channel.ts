@@ -3,7 +3,7 @@ import { Type } from '@sinclair/typebox';
 
 import { PageQuery, ResponseErrorSchema, ResponseSuccessSchema } from '../../base';
 
-const API_PREFIX = 'Channel';
+const API_PREFIX = 'live';
 
 const ChannelSchema = Type.Object({
   id: Type.String({ description: 'id' }),
