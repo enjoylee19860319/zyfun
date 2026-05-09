@@ -28,7 +28,7 @@
     "build": "tsdown",
     "clean": "rimraf dist",
     "dev": "tsc -w",
-    "prepublishOnly": "pnpm build",
+    "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
