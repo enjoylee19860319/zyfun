@@ -1,5 +1,5 @@
-import { aes, base64, des, hash, rabbit, rabbitLegacy, rc4, rsa, sm4, tripleDes } from '@shared/modules/crypto';
-import type { Mode, Pad, RsaPad, Sm4Mode, Sm4Pad } from '@shared/modules/crypto/type';
+import type { Mode, Pad, RsaPad, Sm4Mode, Sm4Pad } from '@zy/crypto';
+import { aes, base64, des, hash, rabbit, rabbitLegacy, rc4, rsa, sm4, tripleDes } from '@zy/crypto';
 
 export const base64Encode = (val: string) => base64.encode({ src: val });
 export const base64Decode = (val: string) => base64.decode({ src: val });

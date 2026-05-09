@@ -4,7 +4,7 @@ import { request } from '@main/utils/request';
 import type { GetProxyCacheRequest, SetProxyCacheRequest } from '@server/schemas/v0/proxy';
 import { getSchema, setSchema } from '@server/schemas/v0/proxy';
 import { PROXY_API } from '@shared/config/env';
-import { base64, hash } from '@shared/modules/crypto';
+import { base64, hash } from '@zy/crypto';
 import type { FastifyPluginAsync } from 'fastify';
 
 const API_PREFIX = 'proxy';

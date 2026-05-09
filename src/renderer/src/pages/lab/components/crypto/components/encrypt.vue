@@ -171,7 +171,7 @@
   </div>
 </template>
 <script lang="ts" setup>
-import { aes, des, rabbit, rabbitLegacy, rc4, rc4Drop, rsa, sm4, tripleDes } from '@shared/modules/crypto';
+import { aes, des, rabbit, rabbitLegacy, rc4, rc4Drop, rsa, sm4, tripleDes } from '@zy/crypto';
 import type { FormInstanceFunctions, SubmitContext } from 'tdesign-vue-next';
 import { MessagePlugin } from 'tdesign-vue-next';
 import { computed, ref, useTemplateRef, watch } from 'vue';

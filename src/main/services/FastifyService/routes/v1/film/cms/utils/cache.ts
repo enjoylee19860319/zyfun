@@ -2,11 +2,11 @@ import { loggerService } from '@logger';
 import { dbService } from '@main/services/DbService';
 import { SITE_TYPE } from '@shared/config/film';
 import { LOG_MODULE } from '@shared/config/logger';
-import { hash } from '@shared/modules/crypto';
 import LruCache from '@shared/modules/lrucache';
 import singleton from '@shared/modules/singleton';
 import { isNil, isPositiveFiniteNumber } from '@shared/modules/validate';
 import type { ICmsAdapter, ICmsAdapterConstructor } from '@shared/types/cms';
+import { hash } from '@zy/crypto';
 
 import {
   T0Adapter,

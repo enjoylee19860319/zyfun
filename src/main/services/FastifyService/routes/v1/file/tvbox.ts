@@ -14,7 +14,7 @@ import { APP_FILE_PATH } from '@main/utils/path';
 import type { TvboxAutoParams, TvboxMakeParams } from '@server/schemas/v1/file/tvbox';
 import { autoSchema, makeSchema } from '@server/schemas/v1/file/tvbox';
 import { PREFIX_API } from '@shared/config/env';
-import { randomUUID } from '@shared/modules/crypto';
+import { randomUUID } from '@zy/crypto';
 import type { FastifyPluginAsync } from 'fastify';
 
 const API_PREFIX = 'file/film';

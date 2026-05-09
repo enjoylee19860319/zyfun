@@ -2,8 +2,8 @@ import { searchService } from '@main/services/SearchService';
 import { request } from '@main/utils/request';
 import { getTimeout } from '@main/utils/tool';
 import { Readability } from '@mozilla/readability';
-import { randomUUID } from '@shared/modules/crypto';
 import { isHttp } from '@shared/modules/validate';
+import { randomUUID } from '@zy/crypto';
 import { JSDOM } from 'jsdom';
 import TurndownService from 'turndown';
 

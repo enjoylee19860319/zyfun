@@ -4,8 +4,8 @@ import { searchService } from '@main/services/SearchService';
 import { windowService } from '@main/services/WindowService';
 import { LOG_MODULE } from '@shared/config/logger';
 import { WINDOW_NAME } from '@shared/config/window';
-import { base64, randomUUID } from '@shared/modules/crypto';
 import { isHttp } from '@shared/modules/validate';
+import { base64, randomUUID } from '@zy/crypto';
 import { JSDOM } from 'jsdom';
 
 import { createAbortPromise, fetchWebContent, noContent } from './fetch';

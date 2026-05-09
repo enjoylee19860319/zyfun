@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
-import { base64 } from '@shared/modules/crypto';
 import { isArray, isFunction, isJsonStr, isNil } from '@shared/modules/validate';
+import { base64 } from '@zy/crypto';
 import workerpool from 'workerpool';
 
 import { aesX, BaseSpider, desX, getProxy, local, md5X, req, rsaX } from './inject';
