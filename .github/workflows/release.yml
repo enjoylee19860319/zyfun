@@ -52,45 +52,33 @@ jobs:
 
   build:
     needs: prepare
-    if: |
-      github.event_name == 'push' ||
-      inputs.platform == 'all' ||
-      inputs.platform == 'win' && contains(matrix.platform, 'win') ||
-      inputs.platform == 'mac' && contains(matrix.platform, 'mac') ||
-      inputs.platform == 'linux' && contains(matrix.platform, 'linux')
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
-        include:
-          - os: macos-latest
-            platform: mac
-            arch: arm64
-            build_command: pnpm build:mac:arm64
-
-          - os: macos-15-intel
-            platform: mac
-            arch: x64
-            build_command: pnpm build:mac:x64
-
-          - os: windows-latest
-            platform: win
-            arch: x64
-            build_command: pnpm build:win:x64
-
-          - os: windows-11-arm
-            platform: win
-            arch: arm64
-            build_command: pnpm build:win:arm64
-
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-            build_command: pnpm build:linux:x64
-
-          - os: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-            build_command: pnpm build:linux:arm64
+        include: >-
+          ${{ fromJSON(
+            (github.event_name == 'push' || github.event_name == 'pull_request_target' || inputs.platform == 'all') && '[
+              {"os": "macos-latest", "platform": "mac", "arch": "arm64", "build_command": "pnpm build:mac:arm64"},
+              {"os": "macos-13", "platform": "mac", "arch": "x64", "build_command": "pnpm build:mac:x64"},
+              {"os": "windows-latest", "platform": "win", "arch": "x64", "build_command": "pnpm build:win:x64"},
+              {"os": "windows-11-arm", "platform": "win", "arch": "arm64", "build_command": "pnpm build:win:arm64"},
+              {"os": "ubuntu-latest", "platform": "linux", "arch": "x64", "build_command": "pnpm build:linux:x64"},
+              {"os": "ubuntu-24.04-arm", "platform": "linux", "arch": "arm64", "build_command": "pnpm build:linux:arm64"}
+            ]' ||
+            inputs.platform == 'mac' && '[
+              {"os": "macos-latest", "platform": "mac", "arch": "arm64", "build_command": "pnpm build:mac:arm64"},
+              {"os": "macos-13", "platform": "mac", "arch": "x64", "build_command": "pnpm build:mac:x64"}
+            ]' ||
+            inputs.platform == 'win' && '[
+              {"os": "windows-latest", "platform": "win", "arch": "x64", "build_command": "pnpm build:win:x64"},
+              {"os": "windows-11-arm", "platform": "win", "arch": "arm64", "build_command": "pnpm build:win:arm64"}
+            ]' ||
+            inputs.platform == 'linux' && '[
+              {"os": "ubuntu-latest", "platform": "linux", "arch": "x64", "build_command": "pnpm build:linux:x64"},
+              {"os": "ubuntu-24.04-arm", "platform": "linux", "arch": "arm64", "build_command": "pnpm build:linux:arm64"}
+            ]' || '[]'
+          ) }}
       fail-fast: false
 
     steps:
@@ -176,6 +164,7 @@ jobs:
   publish:
     needs: [prepare, build]
     runs-on: ubuntu-latest
+    if: always() && needs.build.result == 'success'
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -189,8 +178,14 @@ jobs:
         run: |
           set -e
 
-          # sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
-          # sudo chmod +x /usr/local/bin/yq
+          YQ_VERSION=$(yq --version | grep -oP 'version v?\K\d+' || echo 0)
+          if [ "$YQ_VERSION" -lt 4 ]; then
+            echo "Current yq version ($YQ_VERSION) is too old, updating to latest v4..."
+            sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+            sudo chmod +x /usr/local/bin/yq
+          else
+            echo "yq version $YQ_VERSION is already up to date."
+          fi
 
           WIN_X64="dist/latest-win-x64.yml"
           WIN_ARM="dist/latest-win-arm64.yml"
