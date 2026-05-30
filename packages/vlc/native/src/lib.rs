@@ -11,6 +11,8 @@ mod util;
 use std::env;
 use std::ffi::c_void;
 use std::ffi::{c_char, c_float, c_int, c_longlong, CString};
+#[cfg(all(unix, not(target_os = "macos")))]
+use std::ffi::c_uint;
 use std::path::Path;
 use std::ptr;
 
