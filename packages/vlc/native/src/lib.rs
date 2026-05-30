@@ -9,10 +9,10 @@ mod types;
 mod util;
 
 use std::env;
-use std::ffi::c_void;
-use std::ffi::{c_char, c_float, c_int, c_longlong, CString};
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::ffi::c_uint;
+use std::ffi::c_void;
+use std::ffi::{c_char, c_float, c_int, c_longlong, CString};
 use std::path::Path;
 use std::ptr;
 
@@ -983,12 +983,12 @@ pub fn get_volume(instance_id: Option<String>) -> NapiResult<f64> {
   let context = state.context()?;
 
   if context.player.is_null() {
-    return Ok(-1.0);
+    return Ok(f64::NAN);
   }
 
   let raw = unsafe { (api.libvlc_audio_get_volume)(context.player) };
   if raw < 0 {
-    return Ok(-1.0);
+    return Ok(f64::NAN);
   }
 
   let volume = ((raw as f64).clamp(0.0, 200.0) / 200.0).cbrt();
@@ -1048,12 +1048,12 @@ pub fn get_progress(instance_id: Option<String>) -> NapiResult<f64> {
   let context = state.context()?;
 
   if context.player.is_null() {
-    return Ok(-1.0);
+    return Ok(f64::NAN);
   }
 
   let raw = unsafe { (api.libvlc_media_player_get_position)(context.player) } as f64;
   if raw < 0.0 {
-    return Ok(-1.0);
+    return Ok(f64::NAN);
   }
 
   let pos = raw.clamp(0.0, 1.0);
@@ -1105,7 +1105,7 @@ pub fn set_progress(progress: f64, instance_id: Option<String>) -> NapiResult<()
 }
 
 #[napi]
-pub fn get_duration(instance_id: Option<String>) -> NapiResult<i64> {
+pub fn get_duration(instance_id: Option<String>) -> NapiResult<f64> {
   let id = resolve_instance_id(instance_id);
   let instances = lock_instances()?;
   let state = instances
@@ -1115,15 +1115,19 @@ pub fn get_duration(instance_id: Option<String>) -> NapiResult<i64> {
   let context = state.context()?;
 
   if context.player.is_null() {
-    return Ok(-1);
+    return Ok(f64::NAN);
   }
 
-  let duration = unsafe { (api.libvlc_media_player_get_length)(context.player) };
-  Ok(duration)
+  let raw = unsafe { (api.libvlc_media_player_get_length)(context.player) } as f64;
+  if raw < 0.0 {
+    return Ok(f64::NAN);
+  }
+
+  Ok(raw)
 }
 
 #[napi]
-pub fn get_played(instance_id: Option<String>) -> NapiResult<i64> {
+pub fn get_played(instance_id: Option<String>) -> NapiResult<f64> {
   let id = resolve_instance_id(instance_id);
   let instances = lock_instances()?;
   let state = instances
@@ -1133,15 +1137,19 @@ pub fn get_played(instance_id: Option<String>) -> NapiResult<i64> {
   let context = state.context()?;
 
   if context.player.is_null() {
-    return Ok(-1);
+    return Ok(f64::NAN);
   }
 
-  let played = unsafe { (api.libvlc_media_player_get_time)(context.player) };
-  Ok(played)
+  let raw = unsafe { (api.libvlc_media_player_get_time)(context.player) } as f64;
+  if raw < 0.0 {
+    return Ok(f64::NAN);
+  }
+
+  Ok(raw)
 }
 
 #[napi]
-pub fn get_buffered(instance_id: Option<String>) -> NapiResult<i64> {
+pub fn get_buffered(instance_id: Option<String>) -> NapiResult<f64> {
   let id = resolve_instance_id(instance_id);
   let instances = lock_instances()?;
   let state = instances
@@ -1151,23 +1159,23 @@ pub fn get_buffered(instance_id: Option<String>) -> NapiResult<i64> {
   let context = state.context()?;
 
   if context.player.is_null() {
-    return Ok(-1);
+    return Ok(f64::NAN);
   }
 
-  let duration_ms = unsafe { (api.libvlc_media_player_get_length)(context.player) } as f64;
-  if duration_ms < 0.0 {
-    return Ok(-1);
+  let duration = unsafe { (api.libvlc_media_player_get_length)(context.player) } as f64;
+  if duration < 0.0 {
+    return Ok(f64::NAN);
   }
   let buffering_percent = match api.libvlc_media_player_get_buffering {
     Some(get_buffering) => (unsafe { get_buffering(context.player) }) as f64,
     None => state.latest_buffering_percent,
   };
   if buffering_percent < 0.0 {
-    return Ok(-1);
+    return Ok(f64::NAN);
   }
 
-  let buffered_ms = (duration_ms * (buffering_percent.clamp(0.0, 100.0) / 100.0)).round() as i64;
-  Ok(buffered_ms)
+  let buffered = (duration * (buffering_percent.clamp(0.0, 100.0) / 100.0)).round();
+  Ok(buffered)
 }
 
 #[napi]
@@ -1181,11 +1189,15 @@ pub fn get_playback_rate(instance_id: Option<String>) -> NapiResult<f64> {
   let context = state.context()?;
 
   if context.player.is_null() {
-    return Ok(-1.0);
+    return Ok(f64::NAN);
   }
 
-  let rate = unsafe { (api.libvlc_media_player_get_rate)(context.player) };
-  Ok(rate as f64)
+  let raw = unsafe { (api.libvlc_media_player_get_rate)(context.player) } as f64;
+  if raw < 0.0 {
+    return Ok(f64::NAN);
+  }
+
+  Ok(raw)
 }
 
 #[napi]
