@@ -25,6 +25,12 @@
       "require": "./lib/renderer.cjs",
       "default": "./lib/renderer.mjs"
     },
+    "./constants": {
+      "types": "./lib/constants.d.mts",
+      "import": "./lib/constants.mjs",
+      "require": "./lib/constants.cjs",
+      "default": "./lib/constants.mjs"
+    },
     "./renderer.css": "./lib/renderer.css",
     "./package.json": "./package.json"
   },
