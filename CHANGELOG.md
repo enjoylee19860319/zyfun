@@ -20,6 +20,7 @@
 - 修复: multi-player组件 已知问题(详见该组件CHANGELOG)
 - 修复: @zy/crypto打包配置参数错误
 - 修复: 播放页 影视或解析场景开启跳进度导致直播场景也触发; 同时开启进度跳过、自动下集、预载下集条件时触发播放下下集 [issue #488]
+- 修复: adremove接口针对请求头的处理
 - 变动: 数据库字段(注意备份)
 - 变动: shared模块 packages/shared -> src/shared
 - 变动: JSON解析 JSON -> JSON5
