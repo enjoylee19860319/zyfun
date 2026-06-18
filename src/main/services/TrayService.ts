@@ -1,6 +1,6 @@
 import { t } from '@main/services/AppLocale';
 import { APP_STORE_PATH } from '@main/utils/path';
-import { isLinux, isMacOS, isWindows } from '@main/utils/systeminfo';
+import { isLinux, isMacOS, isWindows } from '@main/utils/systemInfo';
 import { APP_NAME, APP_VERSION, DOCUMENT_URL, ISSUE_URL, WEBSITE_URL } from '@shared/config/appInfo';
 import { WINDOW_NAME } from '@shared/config/window';
 import { isNil } from '@shared/modules/validate';

@@ -9,7 +9,7 @@ import type { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { loggerService } from '@logger';
 import { configManager } from '@main/services/ConfigManager';
 import { Schema } from '@main/types/server';
-import { isDev } from '@main/utils/systeminfo';
+import { isDev } from '@main/utils/systemInfo';
 import { APP_NAME, APP_VERSION } from '@shared/config/appInfo';
 import { PORT } from '@shared/config/env';
 import { LOG_MODULE } from '@shared/config/logger';

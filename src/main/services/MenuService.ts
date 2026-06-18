@@ -1,7 +1,7 @@
 import { t } from '@main/services/AppLocale';
 import { dbService } from '@main/services/DbService';
 import { windowService } from '@main/services/WindowService';
-import { isMacOS } from '@main/utils/systeminfo';
+import { isMacOS } from '@main/utils/systemInfo';
 import { APP_NAME } from '@shared/config/appInfo';
 import { IPC_CHANNEL } from '@shared/config/ipcChannel';
 import { WINDOW_NAME } from '@shared/config/window';
